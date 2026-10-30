@@ -1,40 +1,46 @@
-name: Build
-on: [push, pull_request]
+name: Bogenliga Maven CI Benchmark
+
+on:
+  push:
+    branches:
+      - develop
+      - 'fault/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
 jobs:
   build:
-    name: Build
+    name: Build and Test
     runs-on: ubuntu-latest
+
     steps:
-      - uses: actions/checkout@v2
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Java 17
+        uses: actions/setup-java@v4
         with:
-          fetch-depth: 0  # Shallow clones should be disabled for a better relevancy of analysis 
-      - name: Set up JDK 17
-        uses: actions/setup-java@v3
-        with:
-          distribution: 'zulu'
+          distribution: zulu
           java-version: '17'
-      - name: Cache SonarCloud packages
-        uses: actions/cache@v3
-        with:
-          path: ~/.sonar/cache
-          key: ${{ runner.os }}-sonar
-          restore-keys: ${{ runner.os }}-sonar
-      - name: Cache Maven packages
-        uses: actions/cache@v3
-        with:
-          path: ~/.m2
-          key: ${{ runner.os }}-m2-${{ hashFiles('**/pom.xml') }}
-          restore-keys: ${{ runner.os }}-m2
-      - name: Build and analyze
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}  # Needed to get PR information, if any
-          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN_NEW_2 }}
+          cache: maven
+          cache-dependency-path: 'bogenliga/**/pom.xml'
+
+      - name: Maven Build und Tests
         working-directory: ./bogenliga
+        shell: bash
         run: |
-          java -version
+          set -o pipefail
           export MAVEN_OPTS="--add-opens java.base/java.lang=ALL-UNNAMED"
-          mvn clean org.jacoco:jacoco-maven-plugin:prepare-agent verify org.sonarsource.scanner.maven:sonar-maven-plugin:sonar \
-            -Dsonar.cpd.exclusions="**/*DTO.java,**/*DO.java" \
-            -Dsonar.issue.ignore.multicriteria=e1 \
-            -Dsonar.issue.ignore.multicriteria.e1.ruleKey=java:S4144 \
-            -Dsonar.issue.ignore.multicriteria.e1.resourceKey="**/*DTO.java,**/*DO.java"
+          mvn -B clean verify 2>&1 | tee ../maven.log
+
+      - name: Maven-Logs und Surefire-Berichte speichern
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: maven-diagnostics
+          path: |
+            maven.log
+            bogenliga/**/target/surefire-reports/**
+          if-no-files-found: warn
