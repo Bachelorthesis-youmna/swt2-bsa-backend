@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - develop
+      - setup/docker-ci
       - 'fault/**'
   workflow_dispatch:
 
@@ -19,21 +20,24 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Setup Java 17
-        uses: actions/setup-java@v4
-        with:
-          distribution: zulu
-          java-version: '17'
-          cache: maven
-          cache-dependency-path: 'bogenliga/**/pom.xml'
-
+      - name: Docker-Buildumgebung erstellen
+        run: docker build --file Dockerfile.ci --tag bogenliga-ci .
+      
       - name: Maven Build und Tests
-        working-directory: ./bogenliga
         shell: bash
         run: |
           set -o pipefail
-          export MAVEN_OPTS="--add-opens java.base/java.lang=ALL-UNNAMED"
-          mvn -B clean verify 2>&1 | tee ../maven.log
+          set +e
+
+          docker run --rm \
+            --mount "type=bind,source=${GITHUB_WORKSPACE},target=/workspace" \
+            --workdir /workspace/bogenliga \
+            --env MAVEN_OPTS="--add-opens java.base/java.lang=ALL-UNNAMED" \
+            bogenliga-ci 2>&1 | tee maven.log
+
+          build_status=${PIPESTATUS[0]}
+          exit "${build_status}"
+
 
       - name: Maven-Logs und Surefire-Berichte speichern
         if: always()
